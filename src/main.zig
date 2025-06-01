@@ -25,18 +25,27 @@ pub const Snippet = struct {
     end: usize,
 };
 
-const SnippetList = std.ArrayList(Snippet);
-fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: String, snippetEnd: String) !SnippetList {
-    var result = SnippetList.init(allocator);
+const SnippetStart = struct {
+    lineIndex: usize,
+    name: String,
+};
+
+const SnippetMap = std.StringHashMap(Snippet);
+fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: String, snippetEnd: String) !SnippetMap {
+    var result = SnippetMap.init(allocator);
     errdefer result.deinit();
-    var start: ?usize = null;
+    var start: ?SnippetStart = null;
     var lineIndex: usize = 0;
     var lineIterator = std.mem.splitSequence(u8, content, "\n");
     while (lineIterator.next()) |line| : (lineIndex += 1) {
         if (std.mem.startsWith(u8, line, snippetStart)) {
-            start = lineIndex;
+            var name: String = "";
+            if (line.len > snippetStart.len + 1) {
+                name = line[snippetStart.len + 1 ..];
+            }
+            start = .{ .lineIndex = lineIndex, .name = name };
         } else if (start != null and std.mem.startsWith(u8, line, snippetEnd)) {
-            try result.append(.{ .start = start.?, .end = lineIndex });
+            try result.put(start.?.name, .{ .start = start.?.lineIndex, .end = lineIndex });
             start = null;
         }
     }
@@ -49,64 +58,78 @@ test "Parse zero snippet" {
     ;
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "snippet-end");
     defer result.deinit();
-    try std.testing.expectEqualDeep(&[_]Snippet{}, result.items);
+    try expectSnippetsEquals(&[_]SnippetAssertItem{}, result);
 }
 
 test "Parse one snippet" {
     const source =
-        \\// snippet-start
+        \\// snippet-start X
         \\x = 42
         \\// snippet-end
     ;
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
-    try std.testing.expectEqualDeep(&[_]Snippet{
-        .{ .start = 0, .end = 2 },
-    }, result.items);
+    try expectSnippetsEquals(&[_]SnippetAssertItem{
+        .{ .name = "X", .snippet = .{ .start = 0, .end = 2 } },
+    }, result);
 }
 
 test "Parse many snippets" {
     const source =
-        \\// snippet-start
+        \\// snippet-start X
         \\x = 42
         \\// snippet-end
         \\Not a snippet line
-        \\// snippet-start
+        \\// snippet-start Y
         \\y = 0
         \\// snippet-end
     ;
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
-    try std.testing.expectEqualDeep(&[_]Snippet{
-        .{ .start = 0, .end = 2 },
-        .{ .start = 4, .end = 6 },
-    }, result.items);
+    try expectSnippetsEquals(&[_]SnippetAssertItem{
+        .{ .name = "X", .snippet = .{ .start = 0, .end = 2 } },
+        .{ .name = "Y", .snippet = .{ .start = 4, .end = 6 } },
+    }, result);
 }
 
 test "Ignore dangling starts" {
     const source =
-        \\// snippet-start
-        \\// snippet-start
+        \\// snippet-start X
+        \\// snippet-start Y
         \\y = 0
         \\// snippet-end
     ;
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
-    try std.testing.expectEqualDeep(&[_]Snippet{
-        .{ .start = 1, .end = 3 },
-    }, result.items);
+    try expectSnippetsEquals(&[_]SnippetAssertItem{
+        .{ .name = "Y", .snippet = .{ .start = 1, .end = 3 } },
+    }, result);
 }
 
 test "Ignore dangling ends" {
     const source =
-        \\// snippet-start
+        \\// snippet-start Y
         \\y = 0
         \\// snippet-end
         \\// snippet-end
     ;
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
-    try std.testing.expectEqualDeep(&[_]Snippet{
-        .{ .start = 0, .end = 2 },
-    }, result.items);
+    try expectSnippetsEquals(&[_]SnippetAssertItem{
+        .{ .name = "Y", .snippet = .{ .start = 0, .end = 2 } },
+    }, result);
+}
+
+const SnippetAssertItem = struct {
+    name: String,
+    snippet: Snippet,
+};
+
+fn expectSnippetsEquals(expected: []const SnippetAssertItem, actual: SnippetMap) !void {
+    var expectedMap = SnippetMap.init(std.testing.allocator);
+    defer expectedMap.deinit();
+    try std.testing.expectEqual(expected.len, actual.count());
+    for (expected) |expectedSnippet| {
+        try std.testing.expectEqualDeep(expectedSnippet.snippet, actual.get(expectedSnippet.name));
+    }
 }
