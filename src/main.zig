@@ -21,8 +21,10 @@ pub fn main() !void {
 }
 
 pub const Snippet = struct {
-    start: usize,
-    end: usize,
+    /// 0 indexed
+    startLine: usize,
+    /// 0 indexed
+    endLine: usize,
 };
 
 const SnippetMap = std.StringHashMap(Snippet);
@@ -43,7 +45,7 @@ fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: St
             }
             start = .{ .lineIndex = lineIndex, .name = name };
         } else if (start != null and std.mem.startsWith(u8, line, snippetEnd)) {
-            try result.put(start.?.name, .{ .start = start.?.lineIndex, .end = lineIndex });
+            try result.put(start.?.name, Snippet{ .startLine = start.?.lineIndex, .endLine = lineIndex });
             start = null;
         }
     }
@@ -68,7 +70,7 @@ test "Parse one snippet" {
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
     try expectSnippetsEquals(&[_]SnippetAssertItem{
-        .{ .name = "X", .snippet = .{ .start = 0, .end = 2 } },
+        .{ .name = "X", .snippet = Snippet{ .startLine = 0, .endLine = 2 } },
     }, result);
 }
 
@@ -85,8 +87,8 @@ test "Parse many snippets" {
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
     try expectSnippetsEquals(&[_]SnippetAssertItem{
-        .{ .name = "X", .snippet = .{ .start = 0, .end = 2 } },
-        .{ .name = "Y", .snippet = .{ .start = 4, .end = 6 } },
+        .{ .name = "X", .snippet = Snippet{ .startLine = 0, .endLine = 2 } },
+        .{ .name = "Y", .snippet = Snippet{ .startLine = 4, .endLine = 6 } },
     }, result);
 }
 
@@ -100,7 +102,7 @@ test "Ignore dangling starts" {
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
     try expectSnippetsEquals(&[_]SnippetAssertItem{
-        .{ .name = "Y", .snippet = .{ .start = 1, .end = 3 } },
+        .{ .name = "Y", .snippet = Snippet{ .startLine = 1, .endLine = 3 } },
     }, result);
 }
 
@@ -114,7 +116,7 @@ test "Ignore dangling ends" {
     var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
     defer result.deinit();
     try expectSnippetsEquals(&[_]SnippetAssertItem{
-        .{ .name = "Y", .snippet = .{ .start = 0, .end = 2 } },
+        .{ .name = "Y", .snippet = Snippet{ .startLine = 0, .endLine = 2 } },
     }, result);
 }
 
