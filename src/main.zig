@@ -25,16 +25,14 @@ pub const Snippet = struct {
     end: usize,
 };
 
-const SnippetStart = struct {
-    lineIndex: usize,
-    name: String,
-};
-
 const SnippetMap = std.StringHashMap(Snippet);
 fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: String, snippetEnd: String) !SnippetMap {
     var result = SnippetMap.init(allocator);
     errdefer result.deinit();
-    var start: ?SnippetStart = null;
+    var start: ?struct {
+        lineIndex: usize,
+        name: String,
+    } = null;
     var lineIndex: usize = 0;
     var lineIterator = std.mem.splitSequence(u8, content, "\n");
     while (lineIterator.next()) |line| : (lineIndex += 1) {
