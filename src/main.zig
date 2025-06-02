@@ -1,21 +1,29 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
 const std = @import("std");
 const String = []const u8;
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    const allocator = std.heap.page_allocator;
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
     const stdout_file = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+    if (args.len < 2) return;
+
+    const mdFile = args[1];
+
+    const mdContent = try readFile(allocator, mdFile);
+    defer allocator.free(mdContent);
+
+    const mdSnippets = try parseMarkdownSnippets(allocator, mdContent);
+    defer mdSnippets.deinit();
+
+    try stdout.print("Found {d} snippets in {s}:\n", .{ mdSnippets.items.len, mdFile });
+    for (mdSnippets.items) |snippet| {
+        try stdout.print("\t{s} ({d} - {d})\n", .{ snippet.name, snippet.startLine + 1, snippet.endLine + 1 });
+    }
 
     try bw.flush(); // Don't forget to flush!
 }
@@ -41,6 +49,15 @@ pub const MarkdownSnippet = struct {
     const closeStartMarker = " -->";
     const endMarker = "<!-- snippet-end -->";
 };
+
+fn readFile(allocator: std.mem.Allocator, file: String) !String {
+    var openFile = try std.fs.cwd().openFile(file, .{});
+    defer openFile.close();
+    const stats = try openFile.stat();
+    const result = try allocator.alloc(u8, stats.size);
+    _ = try openFile.readAll(result);
+    return result;
+}
 
 fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: String, snippetEnd: String) !Snippet.Map {
     var result = Snippet.Map.init(allocator);

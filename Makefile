@@ -1,5 +1,5 @@
 run:
-	zig build run README.md
+	zig build run -- README.md
 test:
 	zig build test
 
