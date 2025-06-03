@@ -1,5 +1,6 @@
 const std = @import("std");
 const String = []const u8;
+const StringIterator = std.mem.SplitIterator(u8, .sequence);
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -59,6 +60,83 @@ fn readFile(allocator: std.mem.Allocator, file: String) !String {
     return result;
 }
 
+fn lines(content: String) StringIterator {
+    return std.mem.splitSequence(u8, content, "\n");
+}
+
+fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: anytype, snippets: anytype) !void {
+    var lineIndex: usize = 0;
+    var lineIterator = lines(content);
+    for (mdSnippets.items) |mdSnippet| {
+        while (lineIndex <= mdSnippet.startLine) { // Include snippet start
+            try writer.writeLine(lineIterator.next() orelse return);
+            lineIndex += 1;
+        }
+
+        while (lineIndex < mdSnippet.endLine) { // Skip previous content
+            lineIndex += 1;
+            _ = lineIterator.next();
+        }
+        var snippet = try snippets.get(mdSnippet.name);
+        defer snippet.deinit();
+        var snippetLineIterator = snippet.lineIterator();
+        while (snippetLineIterator.next()) |snippetLine| {
+            try writer.writeLine(snippetLine);
+        }
+        try writer.writeLine(lineIterator.next() orelse return); // Write snippet end
+        lineIndex += 1;
+    }
+    while (lineIterator.next()) |line| {
+        try writer.writeLine(line);
+    }
+}
+
+const InMemoryWriter = struct {
+    lines: std.ArrayList(String),
+    fn init(allocator: std.mem.Allocator) InMemoryWriter {
+        return .{ .lines = std.ArrayList(String).init(allocator) };
+    }
+
+    fn deinit(self: *InMemoryWriter) void {
+        self.lines.deinit();
+    }
+
+    fn writeLine(self: *InMemoryWriter, line: String) !void {
+        try self.lines.append(line);
+    }
+};
+
+const InMemorySnippets = struct {
+    const Result = struct {
+        content: String,
+        fn lineIterator(self: Result) StringIterator {
+            return lines(self.content);
+        }
+
+        fn deinit(_: *Result) void {
+            return;
+        }
+    };
+
+    snippets: std.StringHashMap(String),
+    fn init(allocator: std.mem.Allocator) InMemorySnippets {
+        return .{ .snippets = std.StringHashMap(String).init(allocator) };
+    }
+
+    fn deinit(self: *InMemorySnippets) void {
+        self.snippets.deinit();
+    }
+
+    fn put(self: *InMemorySnippets, name: String, snippet: String) !void {
+        try self.snippets.put(name, snippet);
+    }
+
+    fn get(self: InMemorySnippets, name: String) !Result {
+        const snippet = self.snippets.get(name) orelse "";
+        return Result{ .content = snippet };
+    }
+};
+
 fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: String, snippetEnd: String) !Snippet.Map {
     var result = Snippet.Map.init(allocator);
     errdefer result.deinit();
@@ -67,7 +145,7 @@ fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: St
         name: String,
     } = null;
     var lineIndex: usize = 0;
-    var lineIterator = std.mem.splitSequence(u8, content, "\n");
+    var lineIterator = lines(content);
     while (lineIterator.next()) |line| : (lineIndex += 1) {
         if (std.mem.startsWith(u8, line, snippetStart)) {
             var name: String = "";
@@ -91,7 +169,7 @@ fn parseMarkdownSnippets(allocator: std.mem.Allocator, content: String) !Markdow
         name: String,
     } = null;
     var lineIndex: usize = 0;
-    var lineIterator = std.mem.splitSequence(u8, content, "\n");
+    var lineIterator = lines(content);
     while (lineIterator.next()) |line| : (lineIndex += 1) {
         if (std.mem.startsWith(u8, line, MarkdownSnippet.openStartMarker) and std.mem.endsWith(u8, line, MarkdownSnippet.closeStartMarker)) {
             const name = line[MarkdownSnippet.openStartMarker.len .. line.len - MarkdownSnippet.closeStartMarker.len];
@@ -210,6 +288,96 @@ test "Parse many markdown snippets" {
         .{ .name = "X", .startLine = 0, .endLine = 2 },
         .{ .name = "Y", .startLine = 4, .endLine = 6 },
     }, result.items);
+}
+
+test "Expand zero snippet" {
+    const source =
+        \\Prologue
+        \\Epilogue
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    defer testSnippets.deinit();
+
+    var testWriter = InMemoryWriter.init(std.testing.allocator);
+    defer testWriter.deinit();
+
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    try std.testing.expectEqualDeep(&[_]String{
+        "Prologue",
+        "Epilogue",
+    }, testWriter.lines.items);
+}
+
+test "Expand one snippet" {
+    const source =
+        \\Prologue
+        \\<!-- snippet-start X -->
+        \\x = 42
+        \\<!-- snippet-end -->
+        \\Epilogue
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    defer testSnippets.deinit();
+    try testSnippets.put("X", "Expanded\nsnippet");
+
+    var testWriter = InMemoryWriter.init(std.testing.allocator);
+    defer testWriter.deinit();
+
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    try std.testing.expectEqualDeep(&[_]String{
+        "Prologue",
+        "<!-- snippet-start X -->",
+        "Expanded",
+        "snippet",
+        "<!-- snippet-end -->",
+        "Epilogue",
+    }, testWriter.lines.items);
+}
+
+test "Expand many snippets" {
+    const source =
+        \\Prologue
+        \\<!-- snippet-start X -->
+        \\x = 42
+        \\<!-- snippet-end -->
+        \\Interlude
+        \\<!-- snippet-start Y -->
+        \\YYY
+        \\yyy
+        \\yYy
+        \\<!-- snippet-end -->
+        \\Epilogue
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    defer testSnippets.deinit();
+    try testSnippets.put("X", "Expanded\nX");
+    try testSnippets.put("Y", "Expanded Y");
+
+    var testWriter = InMemoryWriter.init(std.testing.allocator);
+    defer testWriter.deinit();
+
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    try std.testing.expectEqualDeep(&[_]String{
+        "Prologue",
+        "<!-- snippet-start X -->",
+        "Expanded",
+        "X",
+        "<!-- snippet-end -->",
+        "Interlude",
+        "<!-- snippet-start Y -->",
+        "Expanded Y",
+        "<!-- snippet-end -->",
+        "Epilogue",
+    }, testWriter.lines.items);
 }
 
 const SnippetAssertItem = struct {
