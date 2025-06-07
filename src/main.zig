@@ -613,7 +613,7 @@ test "Expand from file" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        "<sup><a href='/src/test\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        adaptOsSeparator("<sup><a href='/src/test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -649,7 +649,7 @@ test "Expand from multiple files" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        "<sup><a href='/src/test\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        adaptOsSeparator("<sup><a href='/src/test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
         "<!-- snippet-end -->",
         "<!-- snippet-start Y -->",
         "<a id='snippet-Y'></a>",
@@ -657,7 +657,7 @@ test "Expand from multiple files" {
         "Nested #1",
         "Nested #2",
         "```",
-        "<sup><a href='/src/test\\nested\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
+        adaptOsSeparator("<sup><a href='/src/test{[sep]c}nested{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>"),
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -757,4 +757,8 @@ fn expectLinesEquals(expected: []const String, actual: []const String) !void {
     for (expected, 0..) |expectedLine, i| {
         try std.testing.expectEqualStrings(expectedLine, actual[i]);
     }
+}
+
+fn adaptOsSeparator(comptime s: String) String {
+    return std.fmt.comptimePrint(s, .{ .sep = std.fs.path.sep });
 }
