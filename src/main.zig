@@ -840,10 +840,12 @@ fn expectSnippetsEquals(expected: []const SnippetAssertItem, actual: Snippet.Map
 }
 
 fn expectLinesEquals(expected: []const String, actual: []const String) !void {
-    try std.testing.expectEqual(expected.len, actual.len);
-    for (expected, 0..) |expectedLine, i| {
-        try std.testing.expectEqualStrings(expectedLine, actual[i]);
-    }
+    const expectedString = try std.mem.join(std.testing.allocator, "\n", expected);
+    defer std.testing.allocator.free(expectedString);
+    const actualString = try std.mem.join(std.testing.allocator, "\n", actual);
+    defer std.testing.allocator.free(actualString);
+
+    try std.testing.expectEqualStrings(expectedString, actualString);
 }
 
 fn joinPaths(allocator: std.mem.Allocator, root: String, sub: String) !String {
