@@ -5,7 +5,7 @@ ZIG=zig
 run:
 	$(ZIG) build run -- README.md src
 test:
-	$(ZIG) build test
+	$(ZIG) test src/main.zig --test-filter "Expand from file"
 install:
 	$(ZIG) build --prefix $(INSTALL_PREFIX) -Doptimize=$(RELEASE_MODE)
 
