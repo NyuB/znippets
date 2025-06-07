@@ -2,6 +2,8 @@ RELEASE_MODE=ReleaseSmall
 INSTALL_PREFIX=$(CURDIR)/install
 ZIG=zig
 
+.PHONY: install
+
 # Run Znippets on its own codebase
 run:
 	$(ZIG) build run -- README.md src
