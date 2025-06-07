@@ -98,7 +98,7 @@ pub const MarkdownSnippet = struct {
     const headerAnchorFmt = "<a id='snippet-{s}'></a>";
 
     /// .{ file, startLine, endLine, snippetName }
-    const footerReferencesFmt = "<sup><a href='/{[file]s}#L{[start]d}-L{[end]d}' title='Snippet source file'>snippet source</a> | <a href='#snippet-{[name]s}' title='Start of snippet'>anchor</a></sup>";
+    const footerReferencesFmt = "<sup><a href='/{[file]s}#L{[start]d}-L{[end]d}' title='Snippet source file'>source (github)</a> | <a href='#snippet-{[name]s}' title='Start of snippet'>anchor</a></sup>";
 };
 
 fn readFile(allocator: std.mem.Allocator, file: String) !String {
@@ -602,7 +602,7 @@ test "Expand one snippet" {
         "Expanded",
         "snippet",
         "```",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -651,7 +651,7 @@ test "Expand many snippets" {
         "Expanded",
         "X",
         "```",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Interlude",
         "<!-- snippet-start Y -->",
@@ -659,7 +659,7 @@ test "Expand many snippets" {
         "```",
         "Expanded Y",
         "```",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>source (github)</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -697,7 +697,7 @@ test "Expand from file" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -736,7 +736,7 @@ test "Expand from multiple files" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "<!-- snippet-start Y -->",
         "<a id='snippet-Y'></a>",
@@ -744,7 +744,7 @@ test "Expand from multiple files" {
         "Nested #1",
         "Nested #2",
         "```",
-        "<sup><a href='/src/test/nested/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
+        "<sup><a href='/src/test/nested/snippet.txt#L1-L4' title='Snippet source file'>source (github)</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -778,7 +778,7 @@ test "Expand to file" {
         \\Expanded
         \\snippet
         \\```
-        \\<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
+        \\<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
         \\<!-- snippet-end -->
     , expanded);
 }
