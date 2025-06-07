@@ -89,6 +89,12 @@ pub const MarkdownSnippet = struct {
     const closeStartMarker = " -->";
     const endMarker = "<!-- snippet-end -->";
     const codeFence = "```";
+
+    /// .{ snippetName }
+    const headerAnchorFmt = "<a id='snippet-{s}'></a>";
+
+    /// .{ file, startLine, endLine, snippetName }
+    const footerReferencesFmt = "<sup><a href='/{s}#L{d}-L{d}' title='Snippet source file'>snippet source</a> | <a href='#snippet-{s}' title='Start of snippet'>anchor</a></sup>";
 };
 
 fn readFile(allocator: std.mem.Allocator, file: String) !String {
@@ -139,6 +145,7 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
             try writer.writeLine(lineIterator.next() orelse return);
             lineIndex += 1;
         }
+        try writer.writeFormattedLine(MarkdownSnippet.headerAnchorFmt, .{mdSnippet.name});
         try writer.writeLine(MarkdownSnippet.codeFence);
 
         while (lineIndex < mdSnippet.endLine) { // Skip previous content
@@ -154,6 +161,7 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
 
         // Write snippet end
         try writer.writeLine(MarkdownSnippet.codeFence);
+        try writer.writeFormattedLine(MarkdownSnippet.footerReferencesFmt, .{ snippet.info.file, snippet.info.snippet.startLine + 1, snippet.info.snippet.endLine + 1, mdSnippet.name });
         try writer.writeLine(lineIterator.next() orelse return);
 
         lineIndex += 1;
@@ -182,6 +190,11 @@ const InMemoryWriter = struct {
         std.mem.copyForwards(u8, copy, line);
         try self.lines.append(copy);
     }
+
+    fn writeFormattedLine(self: *InMemoryWriter, comptime fmt: String, fmtArgs: anytype) !void {
+        const formatted = try std.fmt.allocPrint(self.allocator, fmt, fmtArgs);
+        try self.lines.append(formatted);
+    }
 };
 
 const FileWriter = struct {
@@ -203,36 +216,12 @@ const FileWriter = struct {
     fn deinit(self: *FileWriter) void {
         self.file.close();
     }
-};
 
-const InMemorySnippets = struct {
-    const Result = struct {
-        content: String,
-        fn lineIterator(self: Result) StringIterator {
-            return lines(self.content);
-        }
-
-        fn deinit(_: *Result) void {
-            return;
-        }
-    };
-
-    snippets: std.StringHashMap(String),
-    fn init(allocator: std.mem.Allocator) InMemorySnippets {
-        return .{ .snippets = std.StringHashMap(String).init(allocator) };
-    }
-
-    fn deinit(self: *InMemorySnippets) void {
-        self.snippets.deinit();
-    }
-
-    fn put(self: *InMemorySnippets, name: String, snippet: String) !void {
-        try self.snippets.put(name, snippet);
-    }
-
-    fn get(self: InMemorySnippets, name: String) !Result {
-        const snippet = self.snippets.get(name) orelse "";
-        return Result{ .content = snippet };
+    fn writeFormattedLine(self: *FileWriter, comptime fmt: String, fmtArgs: anytype) !void {
+        if (!self.first)
+            try self.file.writeAll("\n");
+        self.first = false;
+        try self.file.writer().print(fmt, fmtArgs);
     }
 };
 
@@ -245,13 +234,23 @@ const SnippetMarkers = struct {
 
 const MarkersByExtension = std.StringHashMap(SnippetMarkers);
 
+const FullSnippetInfo = struct {
+    file: String,
+    snippet: Snippet,
+};
+
 const FileSnippets = struct {
     const Result = struct {
+        info: FullSnippetInfo,
         content: String,
         start: usize,
         /// Inclusive
         end: usize,
         deallocate: ?std.mem.Allocator,
+
+        fn init(deallocate: std.mem.Allocator, content: String, info: FullSnippetInfo) Result {
+            return Result{ .content = content, .info = info, .start = info.snippet.startLine + 1, .end = info.snippet.endLine - 1, .deallocate = deallocate };
+        }
 
         fn deinit(self: *Result) void {
             if (self.deallocate) |deallocator| deallocator.free(self.content);
@@ -262,13 +261,8 @@ const FileSnippets = struct {
         }
 
         fn empty() Result {
-            return Result{ .content = "", .start = 0, .end = 0, .deallocate = null };
+            return Result{ .content = "", .start = 0, .end = 0, .deallocate = null, .info = FullSnippetInfo{ .file = "", .snippet = Snippet{ .startLine = 0, .endLine = 0 } } };
         }
-    };
-
-    const FileAndSnippet = struct {
-        file: String,
-        snippet: Snippet,
     };
 
     const SnippetsByFile = std.StringHashMap(Snippet.Map);
@@ -306,17 +300,17 @@ const FileSnippets = struct {
     }
 
     fn get(self: FileSnippets, snippetName: String) !Result {
-        const info = self.getFileForSnippet(snippetName) orelse return Result.empty();
+        const info = self.getSnippetInfo(snippetName) orelse return Result.empty();
         const content = try readFile(self.allocator, info.file);
-        return Result{ .content = content, .start = info.snippet.startLine + 1, .end = info.snippet.endLine - 1, .deallocate = self.allocator };
+        return Result.init(self.allocator, content, info);
     }
 
-    fn getFileForSnippet(self: FileSnippets, snippetName: String) ?FileAndSnippet {
+    fn getSnippetInfo(self: FileSnippets, snippetName: String) ?FullSnippetInfo {
         var fileNames = self.snippetsByFile.keyIterator();
         while (fileNames.next()) |fileName| {
             const snippetMap = self.snippetsByFile.get(fileName.*).?;
             if (snippetMap.contains(snippetName)) {
-                return FileAndSnippet{ .file = fileName.*, .snippet = snippetMap.get(snippetName).? };
+                return FullSnippetInfo{ .file = fileName.*, .snippet = snippetMap.get(snippetName).? };
             }
         }
         return null;
@@ -489,7 +483,7 @@ test "Expand zero snippet" {
     const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
     defer mdSnippets.deinit();
 
-    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    var testSnippets = TestSnippets.init(std.testing.allocator);
     defer testSnippets.deinit();
 
     var testWriter = InMemoryWriter.init(std.testing.allocator);
@@ -513,7 +507,7 @@ test "Expand one snippet" {
     const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
     defer mdSnippets.deinit();
 
-    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    var testSnippets = TestSnippets.init(std.testing.allocator);
     defer testSnippets.deinit();
     try testSnippets.put("X", "Expanded\nsnippet");
 
@@ -521,13 +515,15 @@ test "Expand one snippet" {
     defer testWriter.deinit();
 
     try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
-    try std.testing.expectEqualDeep(&[_]String{
+    try expectLinesEquals(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
+        "<a id='snippet-X'></a>",
         "```",
         "Expanded",
         "snippet",
         "```",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -537,12 +533,14 @@ test "Expand many snippets" {
     const source =
         \\Prologue
         \\<!-- snippet-start X -->
+        \\<a id='snippet-X'></a>
         \\```
         \\x = 42
         \\```
         \\<!-- snippet-end -->
         \\Interlude
         \\<!-- snippet-start Y -->
+        \\<a id='snippet-Y'></a>
         \\```
         \\YYY
         \\yyy
@@ -554,7 +552,7 @@ test "Expand many snippets" {
     const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
     defer mdSnippets.deinit();
 
-    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    var testSnippets = TestSnippets.init(std.testing.allocator);
     defer testSnippets.deinit();
     try testSnippets.put("X", "Expanded\nX");
     try testSnippets.put("Y", "Expanded Y");
@@ -563,19 +561,23 @@ test "Expand many snippets" {
     defer testWriter.deinit();
 
     try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
-    try std.testing.expectEqualDeep(&[_]String{
+    try expectLinesEquals(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
+        "<a id='snippet-X'></a>",
         "```",
         "Expanded",
         "X",
         "```",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Interlude",
         "<!-- snippet-start Y -->",
+        "<a id='snippet-Y'></a>",
         "```",
         "Expanded Y",
         "```",
+        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -605,10 +607,12 @@ test "Expand from file" {
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
+        "<a id='snippet-X'></a>",
         "```",
         "Expanded #1",
         "Expanded #2",
         "```",
+        "<sup><a href='/src/test\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -639,16 +643,20 @@ test "Expand from multiple files" {
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
+        "<a id='snippet-X'></a>",
         "```",
         "Expanded #1",
         "Expanded #2",
         "```",
+        "<sup><a href='/src/test\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "<!-- snippet-start Y -->",
+        "<a id='snippet-Y'></a>",
         "```",
         "Nested #1",
         "Nested #2",
         "```",
+        "<sup><a href='/src/test\\nested\\snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -661,7 +669,7 @@ test "Expand to file" {
     const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
     defer mdSnippets.deinit();
 
-    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    var testSnippets = TestSnippets.init(std.testing.allocator);
     defer testSnippets.deinit();
     try testSnippets.put("X", "Expanded\nsnippet");
 
@@ -677,13 +685,49 @@ test "Expand to file" {
 
     try std.testing.expectEqualStrings(
         \\<!-- snippet-start X -->
+        \\<a id='snippet-X'></a>
         \\```
         \\Expanded
         \\snippet
         \\```
+        \\<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
         \\<!-- snippet-end -->
     , expanded);
 }
+
+const TestSnippets = struct {
+    const Result = struct {
+        content: String,
+        /// TODO inject actual test info
+        info: FullSnippetInfo = .{ .file = "<in-memory-for-tests>", .snippet = .{ .startLine = 0, .endLine = 0 } },
+
+        fn lineIterator(self: Result) StringIterator {
+            return lines(self.content);
+        }
+
+        fn deinit(_: *Result) void {
+            return;
+        }
+    };
+
+    snippets: std.StringHashMap(String),
+    fn init(allocator: std.mem.Allocator) TestSnippets {
+        return .{ .snippets = std.StringHashMap(String).init(allocator) };
+    }
+
+    fn deinit(self: *TestSnippets) void {
+        self.snippets.deinit();
+    }
+
+    fn put(self: *TestSnippets, name: String, snippet: String) !void {
+        try self.snippets.put(name, snippet);
+    }
+
+    fn get(self: TestSnippets, name: String) !Result {
+        const snippet = self.snippets.get(name) orelse "";
+        return Result{ .content = snippet };
+    }
+};
 
 const SnippetAssertItem = struct {
     name: String,
