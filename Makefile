@@ -12,4 +12,3 @@ install:
 fmt:
 	$(ZIG) fmt src
 	$(ZIG) fmt build.zig
-	$(ZIG) fmt build.zig.zon
