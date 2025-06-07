@@ -1,5 +1,5 @@
 name: CI
-run-name: ${{ github.event.inputs.name }}
+run-name: ${{ github.event.inputs.version }}
 
 on:
   # Triggers the workflow on push or pull request events
@@ -11,14 +11,9 @@ on:
   # Manual trigger for release
   workflow_dispatch:
     inputs:
-      name:
+      version:
         description: 'Release name'
         required: true
-        default: 'snapshot'
-      text:
-        description: 'Release description'
-        required: true
-        default: 'Snapshot release of the main branch'
 
 jobs:
   build:
@@ -54,15 +49,22 @@ jobs:
       - name: Install release version
         run: make install ZIG=${{ matrix.zig }}/zig
 
+      - name: Prepare release
+        # Only if manually triggered
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          make release_changelog.md
+          make validate_semver VERSION=${{ github.event.inputs.version }}
+
       - name: Release
         # Only if manually triggered
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.event.inputs.name }}
-          tag_name: ${{ github.event.inputs.name }}
+          name: ${{ github.event.inputs.version }}
+          tag_name: ${{ github.event.inputs.version }}
           target_commitish: main
-          body: ${{ github.event.inputs.text }}
+          body_path: release_changelog.md
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             install/bin/${{ matrix.executable_name }}

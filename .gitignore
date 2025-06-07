@@ -1,3 +1,6 @@
 .zig-cache
 zig-out
 install
+
+# Produced during CI release
+release_changelog.md
