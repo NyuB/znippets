@@ -1,6 +1,6 @@
 # Znippet
 
-Markdown-snippet but cross-platform without dotnet requirements
+[Markdown-snippet](https://github.com/SimonCropp/MarkdownSnippets) but cross-platform without dotnet requirements
 
 <!-- snippet-start X -->
 <a id='snippet-X'></a>
