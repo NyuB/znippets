@@ -286,7 +286,8 @@ const FileSnippets = struct {
                 defer self.allocator.free(content);
                 const markers = markersByExtension.get(fileExtension(entry.name)) orelse SnippetMarkers.default;
                 const snippets = try parseSnippets(self.scanAllocator.allocator(), content, markers.start, markers.end);
-                try self.put(fullPathToFile, snippets);
+                if (snippets.count() > 0)
+                    try self.put(fullPathToFile, snippets);
             } else if (entry.kind == .directory) {
                 const concatenated = try std.fs.path.join(self.allocator, &[_]String{ folder, entry.name });
                 defer self.allocator.free(concatenated);
@@ -693,6 +694,14 @@ test "Expand to file" {
         \\<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
         \\<!-- snippet-end -->
     , expanded);
+}
+
+test "Exclude snippet-less files from scan" {
+    var fileSnippets = FileSnippets.init(std.testing.allocator);
+    defer fileSnippets.deinit();
+
+    try fileSnippets.scan("src/test", MarkersByExtension.init(std.testing.allocator));
+    try std.testing.expectEqual(@as(?Snippet.Map, null), fileSnippets.snippetsByFile.get("src/test/no-snippet.txt"));
 }
 
 const TestSnippets = struct {
