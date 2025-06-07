@@ -134,6 +134,27 @@ const InMemoryWriter = struct {
     }
 };
 
+const FileWriter = struct {
+    file: std.fs.File,
+    first: bool = true,
+
+    fn init(fileName: String) !FileWriter {
+        const file = try std.fs.cwd().createFile(fileName, .{});
+        return FileWriter{ .file = file };
+    }
+
+    fn writeLine(self: *FileWriter, line: String) !void {
+        if (!self.first)
+            try self.file.writeAll("\n");
+        self.first = false;
+        try self.file.writeAll(line);
+    }
+
+    fn deinit(self: *FileWriter) void {
+        self.file.close();
+    }
+};
+
 const InMemorySnippets = struct {
     const Result = struct {
         content: String,
@@ -500,6 +521,36 @@ test "Expand from file" {
         "Expanded #2",
         "<!-- snippet-end -->",
     }, writer.lines.items);
+}
+
+test "Expand to file" {
+    const source =
+        \\<!-- snippet-start X -->
+        \\<!-- snippet-end -->
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var testSnippets = InMemorySnippets.init(std.testing.allocator);
+    defer testSnippets.deinit();
+    try testSnippets.put("X", "Expanded\nsnippet");
+
+    var writer = try FileWriter.init("src/test/expanded.md");
+    defer writer.deinit();
+    defer {
+        std.fs.cwd().deleteFile("src/test/expanded.md") catch unreachable;
+    }
+
+    try expandSnippets(source, mdSnippets, &writer, testSnippets);
+    const expanded = try readFile(std.testing.allocator, "src/test/expanded.md");
+    defer std.testing.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings(
+        \\<!-- snippet-start X -->
+        \\Expanded
+        \\snippet
+        \\<!-- snippet-end -->
+    , expanded);
 }
 
 const SnippetAssertItem = struct {
