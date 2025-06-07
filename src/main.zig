@@ -163,7 +163,6 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
         try writer.writeLine(MarkdownSnippet.codeFence);
         try writer.writeFormattedLine(MarkdownSnippet.footerReferencesFmt, .{ snippet.info.file, snippet.info.snippet.startLine + 1, snippet.info.snippet.endLine + 1, mdSnippet.name });
         try writer.writeLine(lineIterator.next() orelse return);
-
         lineIndex += 1;
     }
     while (lineIterator.next()) |line| {
