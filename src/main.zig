@@ -35,7 +35,35 @@ pub const Snippet = struct {
     /// 0 indexed
     endLine: usize,
 
-    const Map = std.StringHashMap(Snippet);
+    const Map = struct {
+        _map: std.StringHashMapUnmanaged(Snippet),
+        arena: std.heap.ArenaAllocator,
+        fn init(allocator: std.mem.Allocator) Map {
+            return Map{ ._map = std.StringHashMapUnmanaged(Snippet){}, .arena = std.heap.ArenaAllocator.init(allocator) };
+        }
+
+        fn get(self: Map, snippetName: String) ?Snippet {
+            return self._map.get(snippetName);
+        }
+
+        fn contains(self: Map, snippetName: String) bool {
+            return self._map.contains(snippetName);
+        }
+
+        fn put(self: *Map, snippetName: String, snippet: Snippet) !void {
+            const copy = try self.arena.allocator().alloc(u8, snippetName.len);
+            std.mem.copyForwards(u8, copy, snippetName);
+            try self._map.put(self.arena.allocator(), copy, snippet);
+        }
+
+        fn deinit(self: *Map) void {
+            self.arena.deinit();
+        }
+
+        fn count(self: Map) usize {
+            return self._map.count();
+        }
+    };
 };
 
 pub const MarkdownSnippet = struct {
@@ -58,6 +86,11 @@ fn readFile(allocator: std.mem.Allocator, file: String) !String {
     const result = try allocator.alloc(u8, stats.size);
     _ = try openFile.readAll(result);
     return result;
+}
+
+fn fileExtension(fileName: String) String {
+    var it = std.mem.splitBackwardsSequence(u8, fileName, ".");
+    return it.next() orelse "";
 }
 
 fn lines(content: String) StringIterator {
@@ -186,6 +219,15 @@ const InMemorySnippets = struct {
     }
 };
 
+const SnippetMarkers = struct {
+    start: String,
+    end: String,
+
+    const default = SnippetMarkers{ .start = "// snippet-start", .end = "// snippet-end" };
+};
+
+const MarkersByExtension = std.StringHashMap(SnippetMarkers);
+
 const FileSnippets = struct {
     const Result = struct {
         content: String,
@@ -216,9 +258,30 @@ const FileSnippets = struct {
 
     snippetsByFile: SnippetsByFile,
     allocator: std.mem.Allocator,
+    scanAllocator: std.heap.ArenaAllocator,
 
     fn init(allocator: std.mem.Allocator) FileSnippets {
-        return FileSnippets{ .snippetsByFile = SnippetsByFile.init(allocator), .allocator = allocator };
+        return FileSnippets{ .snippetsByFile = SnippetsByFile.init(allocator), .allocator = allocator, .scanAllocator = std.heap.ArenaAllocator.init(allocator) };
+    }
+
+    fn scan(self: *FileSnippets, folder: String, markersByExtension: MarkersByExtension) !void {
+        var dir = try std.fs.cwd().openDir(folder, std.fs.Dir.OpenDirOptions{ .iterate = true });
+        defer dir.close();
+        var it = dir.iterateAssumeFirstIteration();
+        while (try it.next()) |entry| {
+            if (entry.kind == .file) {
+                const fullPathToFile = try std.fs.path.join(self.scanAllocator.allocator(), &[_]String{ folder, entry.name });
+                const content = try readFile(self.allocator, fullPathToFile);
+                defer self.allocator.free(content);
+                const markers = markersByExtension.get(fileExtension(entry.name)) orelse SnippetMarkers.default;
+                const snippets = try parseSnippets(self.scanAllocator.allocator(), content, markers.start, markers.end);
+                try self.put(fullPathToFile, snippets);
+            } else if (entry.kind == .directory) {
+                const concatenated = try std.fs.path.join(self.allocator, &[_]String{ folder, entry.name });
+                defer self.allocator.free(concatenated);
+                try self.scan(concatenated, markersByExtension);
+            }
+        }
     }
 
     fn put(self: *FileSnippets, fileName: String, snippets: Snippet.Map) !void {
@@ -244,6 +307,7 @@ const FileSnippets = struct {
 
     fn deinit(self: *FileSnippets) void {
         self.snippetsByFile.deinit();
+        self.scanAllocator.deinit();
     }
 };
 
@@ -501,14 +565,11 @@ test "Expand from file" {
     var fileSnippets = FileSnippets.init(std.testing.allocator);
     defer fileSnippets.deinit();
 
-    const snippetFile = "src/test/snippet.txt";
-    const snippetFileContent = try readFile(std.testing.allocator, snippetFile);
-    defer std.testing.allocator.free(snippetFileContent);
+    var markersByExtension = MarkersByExtension.init(std.testing.allocator);
+    defer markersByExtension.deinit();
+    try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
-    var snippets = try parseSnippets(std.testing.allocator, snippetFileContent, "Start:", "End:");
-    defer snippets.deinit();
-
-    try fileSnippets.put(snippetFile, snippets);
+    try fileSnippets.scan("src/test", markersByExtension);
 
     var writer = InMemoryWriter.init(std.testing.allocator);
     defer writer.deinit();
@@ -519,6 +580,42 @@ test "Expand from file" {
         "<!-- snippet-start X -->",
         "Expanded #1",
         "Expanded #2",
+        "<!-- snippet-end -->",
+    }, writer.lines.items);
+}
+
+test "Expand from multiple files" {
+    const source =
+        \\<!-- snippet-start X -->
+        \\<!-- snippet-end -->
+        \\<!-- snippet-start Y -->
+        \\<!-- snippet-end -->
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var fileSnippets = FileSnippets.init(std.testing.allocator);
+    defer fileSnippets.deinit();
+
+    var markersByExtension = MarkersByExtension.init(std.testing.allocator);
+    defer markersByExtension.deinit();
+    try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
+
+    try fileSnippets.scan("src/test", markersByExtension);
+
+    var writer = InMemoryWriter.init(std.testing.allocator);
+    defer writer.deinit();
+
+    try expandSnippets(source, mdSnippets, &writer, fileSnippets);
+
+    try expectLinesEquals(&[_]String{
+        "<!-- snippet-start X -->",
+        "Expanded #1",
+        "Expanded #2",
+        "<!-- snippet-end -->",
+        "<!-- snippet-start Y -->",
+        "Nested #1",
+        "Nested #2",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
