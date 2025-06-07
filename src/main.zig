@@ -27,7 +27,7 @@ pub fn main() !void {
 
     var snippets = FileSnippets.init(allocator);
     defer snippets.deinit();
-    
+
     var markersByExtension = MarkersByExtension.init(allocator);
     defer markersByExtension.deinit();
     try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
@@ -88,6 +88,7 @@ pub const MarkdownSnippet = struct {
     const openStartMarker = "<!-- snippet-start ";
     const closeStartMarker = " -->";
     const endMarker = "<!-- snippet-end -->";
+    const codeFence = "```";
 };
 
 fn readFile(allocator: std.mem.Allocator, file: String) !String {
@@ -138,6 +139,7 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
             try writer.writeLine(lineIterator.next() orelse return);
             lineIndex += 1;
         }
+        try writer.writeLine(MarkdownSnippet.codeFence);
 
         while (lineIndex < mdSnippet.endLine) { // Skip previous content
             lineIndex += 1;
@@ -149,7 +151,11 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
         while (snippetLineIterator.next()) |snippetLine| {
             try writer.writeLine(snippetLine);
         }
-        try writer.writeLine(lineIterator.next() orelse return); // Write snippet end
+
+        // Write snippet end
+        try writer.writeLine(MarkdownSnippet.codeFence);
+        try writer.writeLine(lineIterator.next() orelse return);
+
         lineIndex += 1;
     }
     while (lineIterator.next()) |line| {
@@ -518,8 +524,10 @@ test "Expand one snippet" {
     try std.testing.expectEqualDeep(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
+        "```",
         "Expanded",
         "snippet",
+        "```",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -529,13 +537,17 @@ test "Expand many snippets" {
     const source =
         \\Prologue
         \\<!-- snippet-start X -->
+        \\```
         \\x = 42
+        \\```
         \\<!-- snippet-end -->
         \\Interlude
         \\<!-- snippet-start Y -->
+        \\```
         \\YYY
         \\yyy
         \\yYy
+        \\```
         \\<!-- snippet-end -->
         \\Epilogue
     ;
@@ -554,12 +566,16 @@ test "Expand many snippets" {
     try std.testing.expectEqualDeep(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
+        "```",
         "Expanded",
         "X",
+        "```",
         "<!-- snippet-end -->",
         "Interlude",
         "<!-- snippet-start Y -->",
+        "```",
         "Expanded Y",
+        "```",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -589,8 +605,10 @@ test "Expand from file" {
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
+        "```",
         "Expanded #1",
         "Expanded #2",
+        "```",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -621,12 +639,16 @@ test "Expand from multiple files" {
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
+        "```",
         "Expanded #1",
         "Expanded #2",
+        "```",
         "<!-- snippet-end -->",
         "<!-- snippet-start Y -->",
+        "```",
         "Nested #1",
         "Nested #2",
+        "```",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -655,8 +677,10 @@ test "Expand to file" {
 
     try std.testing.expectEqualStrings(
         \\<!-- snippet-start X -->
+        \\```
         \\Expanded
         \\snippet
+        \\```
         \\<!-- snippet-end -->
     , expanded);
 }
