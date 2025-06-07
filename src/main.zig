@@ -342,7 +342,7 @@ const FileSnippets = struct {
         var it = dir.iterateAssumeFirstIteration();
         while (try it.next()) |entry| {
             if (entry.kind == .file) {
-                const fullPathToFile = try std.fs.path.join(self.scanAllocator.allocator(), &[_]String{ folder, entry.name });
+                const fullPathToFile = try joinPaths(self.scanAllocator.allocator(), folder, entry.name);
                 const content = try readFile(self.allocator, fullPathToFile);
                 defer self.allocator.free(content);
                 const markers = markersByExtension.get(fileExtension(entry.name)) orelse SnippetMarkers.default;
@@ -350,7 +350,7 @@ const FileSnippets = struct {
                 if (snippets.count() > 0)
                     try self.put(fullPathToFile, snippets);
             } else if (entry.kind == .directory) {
-                const concatenated = try std.fs.path.join(self.allocator, &[_]String{ folder, entry.name });
+                const concatenated = try joinPaths(self.allocator, folder, entry.name);
                 defer self.allocator.free(concatenated);
                 try self.scan(concatenated, markersByExtension);
             }
@@ -697,7 +697,7 @@ test "Expand from file" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        adaptOsSeparator("<sup><a href='/src/test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
+        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -736,7 +736,7 @@ test "Expand from multiple files" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        adaptOsSeparator("<sup><a href='/src/test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
+        "<sup><a href='/src/test/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "<!-- snippet-start Y -->",
         "<a id='snippet-Y'></a>",
@@ -744,7 +744,7 @@ test "Expand from multiple files" {
         "Nested #1",
         "Nested #2",
         "```",
-        adaptOsSeparator("<sup><a href='/src/test{[sep]c}nested{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>"),
+        "<sup><a href='/src/test/nested/snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
@@ -846,6 +846,6 @@ fn expectLinesEquals(expected: []const String, actual: []const String) !void {
     }
 }
 
-fn adaptOsSeparator(comptime s: String) String {
-    return std.fmt.comptimePrint(s, .{ .sep = std.fs.path.sep });
+fn joinPaths(allocator: std.mem.Allocator, root: String, sub: String) !String {
+    return try std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, sub });
 }

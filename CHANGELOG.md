@@ -1,5 +1,9 @@
 # Current developments
 
+## Features & changes
+
+- Always use posix path separators, windows or not
+
 # 0.0.1
 
 First usable version

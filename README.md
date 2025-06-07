@@ -21,5 +21,5 @@ fn fileExtension(fileName: String) String {
     return res;
 }
 ```
-<sup><a href='/src\main.zig#L113-L120' title='Snippet source file'>snippet source</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/main.zig#L113-L120' title='Snippet source file'>snippet source</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->
