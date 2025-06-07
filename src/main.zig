@@ -98,7 +98,7 @@ pub const MarkdownSnippet = struct {
     const headerAnchorFmt = "<a id='snippet-{s}'></a>";
 
     /// .{ file, startLine, endLine, snippetName }
-    const footerReferencesFmt = "<sup><a href='/{s}#L{d}-L{d}' title='Snippet source file'>snippet source</a> | <a href='#snippet-{s}' title='Start of snippet'>anchor</a></sup>";
+    const footerReferencesFmt = "<sup><a href='/{[file]s}#L{[start]d}-L{[end]d}' title='Snippet source file'>snippet source</a> | <a href='#snippet-{[name]s}' title='Start of snippet'>anchor</a></sup>";
 };
 
 fn readFile(allocator: std.mem.Allocator, file: String) !String {
@@ -203,7 +203,7 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
 
         // Write snippet end
         try writer.writeLine(MarkdownSnippet.codeFence);
-        try writer.writeFormattedLine(MarkdownSnippet.footerReferencesFmt, .{ snippet.info.file, snippet.info.snippet.startLine + 1, snippet.info.snippet.endLine + 1, mdSnippet.name });
+        try writer.writeFormattedLine(MarkdownSnippet.footerReferencesFmt, .{ .file = snippet.info.file, .start = snippet.info.snippet.startLine + 1, .end = snippet.info.snippet.endLine + 1, .name = mdSnippet.name });
         try writer.writeLine(lineIterator.next() orelse return);
         lineIndex += 1;
     }
