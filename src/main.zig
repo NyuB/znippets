@@ -64,6 +64,28 @@ fn lines(content: String) StringIterator {
     return std.mem.splitSequence(u8, content, "\n");
 }
 
+const LineRangeIterator = struct {
+    start: usize,
+    /// Inclusive
+    end: usize,
+    current: usize,
+    _iterator: StringIterator,
+
+    fn init(start: usize, end: usize, content: String) LineRangeIterator {
+        return LineRangeIterator{ .start = start, .end = end, .current = 0, ._iterator = lines(content) };
+    }
+
+    fn next(self: *LineRangeIterator) ?String {
+        if (self.current > self.end) return null;
+        while (self.current < self.start) {
+            self.current += 1;
+            _ = self._iterator.next();
+        }
+        self.current += 1;
+        return self._iterator.next();
+    }
+};
+
 fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: anytype, snippets: anytype) !void {
     var lineIndex: usize = 0;
     var lineIterator = lines(content);
@@ -93,16 +115,22 @@ fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: any
 
 const InMemoryWriter = struct {
     lines: std.ArrayList(String),
+    allocator: std.mem.Allocator,
     fn init(allocator: std.mem.Allocator) InMemoryWriter {
-        return .{ .lines = std.ArrayList(String).init(allocator) };
+        return .{ .lines = std.ArrayList(String).init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *InMemoryWriter) void {
+        for (self.lines.items) |line| {
+            self.allocator.free(line);
+        }
         self.lines.deinit();
     }
 
     fn writeLine(self: *InMemoryWriter, line: String) !void {
-        try self.lines.append(line);
+        const copy = try self.allocator.alloc(u8, line.len);
+        std.mem.copyForwards(u8, copy, line);
+        try self.lines.append(copy);
     }
 };
 
@@ -134,6 +162,67 @@ const InMemorySnippets = struct {
     fn get(self: InMemorySnippets, name: String) !Result {
         const snippet = self.snippets.get(name) orelse "";
         return Result{ .content = snippet };
+    }
+};
+
+const FileSnippets = struct {
+    const Result = struct {
+        content: String,
+        start: usize,
+        /// Inclusive
+        end: usize,
+        deallocate: ?std.mem.Allocator,
+
+        fn deinit(self: *Result) void {
+            if (self.deallocate) |deallocator| deallocator.free(self.content);
+        }
+
+        fn lineIterator(self: Result) LineRangeIterator {
+            return LineRangeIterator.init(self.start, self.end, self.content);
+        }
+
+        fn empty() Result {
+            return Result{ .content = "", .start = 0, .end = 0, .deallocate = null };
+        }
+    };
+
+    const FileAndSnippet = struct {
+        file: String,
+        snippet: Snippet,
+    };
+
+    const SnippetsByFile = std.StringHashMap(Snippet.Map);
+
+    snippetsByFile: SnippetsByFile,
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator) FileSnippets {
+        return FileSnippets{ .snippetsByFile = SnippetsByFile.init(allocator), .allocator = allocator };
+    }
+
+    fn put(self: *FileSnippets, fileName: String, snippets: Snippet.Map) !void {
+        try self.snippetsByFile.put(fileName, snippets);
+    }
+
+    fn get(self: FileSnippets, snippetName: String) !Result {
+        const info = self.getFileForSnippet(snippetName) orelse return Result.empty();
+        const content = try readFile(self.allocator, info.file);
+        return Result{ .content = content, .start = info.snippet.startLine + 1, .end = info.snippet.endLine - 1, .deallocate = self.allocator };
+    }
+
+    fn getFileForSnippet(self: FileSnippets, snippetName: String) ?FileAndSnippet {
+        var fileNames = self.snippetsByFile.keyIterator();
+        while (fileNames.next()) |fileName| {
+            const snippetMap = self.snippetsByFile.get(fileName.*).?;
+            if (snippetMap.contains(snippetName)) {
+                return FileAndSnippet{ .file = fileName.*, .snippet = snippetMap.get(snippetName).? };
+            }
+        }
+        return null;
+    }
+
+    fn deinit(self: *FileSnippets) void {
+        self.snippetsByFile.deinit();
     }
 };
 
@@ -380,6 +469,39 @@ test "Expand many snippets" {
     }, testWriter.lines.items);
 }
 
+test "Expand from file" {
+    const source =
+        \\<!-- snippet-start X -->
+        \\<!-- snippet-end -->
+    ;
+    const mdSnippets = try parseMarkdownSnippets(std.testing.allocator, source);
+    defer mdSnippets.deinit();
+
+    var fileSnippets = FileSnippets.init(std.testing.allocator);
+    defer fileSnippets.deinit();
+
+    const snippetFile = "src/test/snippet.txt";
+    const snippetFileContent = try readFile(std.testing.allocator, snippetFile);
+    defer std.testing.allocator.free(snippetFileContent);
+
+    var snippets = try parseSnippets(std.testing.allocator, snippetFileContent, "Start:", "End:");
+    defer snippets.deinit();
+
+    try fileSnippets.put(snippetFile, snippets);
+
+    var writer = InMemoryWriter.init(std.testing.allocator);
+    defer writer.deinit();
+
+    try expandSnippets(source, mdSnippets, &writer, fileSnippets);
+
+    try expectLinesEquals(&[_]String{
+        "<!-- snippet-start X -->",
+        "Expanded #1",
+        "Expanded #2",
+        "<!-- snippet-end -->",
+    }, writer.lines.items);
+}
+
 const SnippetAssertItem = struct {
     name: String,
     snippet: Snippet,
@@ -391,5 +513,12 @@ fn expectSnippetsEquals(expected: []const SnippetAssertItem, actual: Snippet.Map
     try std.testing.expectEqual(expected.len, actual.count());
     for (expected) |expectedSnippet| {
         try std.testing.expectEqualDeep(expectedSnippet.snippet, actual.get(expectedSnippet.name));
+    }
+}
+
+fn expectLinesEquals(expected: []const String, actual: []const String) !void {
+    try std.testing.expectEqual(expected.len, actual.len);
+    for (expected, 0..) |expectedLine, i| {
+        try std.testing.expectEqualStrings(expectedLine, actual[i]);
     }
 }
