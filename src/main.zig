@@ -11,7 +11,11 @@ pub fn main() !void {
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
-    if (args.len < 2) return;
+    if (args.len < 3) {
+        try stdout.print("Usage: {s} <md_file> <snippet_folder>\n", .{args[0]});
+        try bw.flush();
+        std.process.exit(1);
+    }
 
     const mdFile = args[1];
 
@@ -21,12 +25,19 @@ pub fn main() !void {
     const mdSnippets = try parseMarkdownSnippets(allocator, mdContent);
     defer mdSnippets.deinit();
 
-    try stdout.print("Found {d} snippets in {s}:\n", .{ mdSnippets.items.len, mdFile });
-    for (mdSnippets.items) |snippet| {
-        try stdout.print("\t{s} ({d} - {d})\n", .{ snippet.name, snippet.startLine + 1, snippet.endLine + 1 });
-    }
+    var snippets = FileSnippets.init(allocator);
+    defer snippets.deinit();
+    
+    var markersByExtension = MarkersByExtension.init(allocator);
+    defer markersByExtension.deinit();
+    try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
-    try bw.flush(); // Don't forget to flush!
+    try snippets.scan(args[2], markersByExtension);
+
+    var writer = try FileWriter.init(mdFile);
+    defer writer.deinit();
+
+    try expandSnippets(mdContent, mdSnippets, &writer, snippets);
 }
 
 pub const Snippet = struct {
