@@ -106,10 +106,12 @@ fn readFile(allocator: std.mem.Allocator, file: String) !String {
     return result;
 }
 
+// snippet-start fileExtension
 fn fileExtension(fileName: String) String {
     var it = std.mem.splitBackwardsSequence(u8, fileName, ".");
     return it.next() orelse "";
 }
+// snippet-end
 
 fn lines(content: String) LineIterator {
     return LineIterator{ .content = content, .delimiters = &[_]String{ "\r\n", "\n" }, .right = content };
