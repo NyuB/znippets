@@ -356,18 +356,22 @@ const FileSnippets = struct {
         while (try it.next()) |entry| {
             if (entry.kind == .file) {
                 const fullPathToFile = try joinPaths(self.scanAllocator.allocator(), folder, entry.name);
-                const content = try readFile(self.allocator, fullPathToFile);
-                defer self.allocator.free(content);
-                const markers = markersByExtension.get(fileExtension(entry.name)) orelse SnippetMarkers.default;
-                const snippets = try parseSnippets(self.scanAllocator.allocator(), content, markers.start, markers.end);
-                if (snippets.count() > 0)
-                    try self.put(fullPathToFile, snippets);
+                try self.scanFile(fullPathToFile, markersByExtension);
             } else if (entry.kind == .directory) {
-                const concatenated = try joinPaths(self.allocator, folder, entry.name);
-                defer self.allocator.free(concatenated);
-                try self.scan(concatenated, markersByExtension);
+                const fullPathToFolder = try joinPaths(self.allocator, folder, entry.name);
+                defer self.allocator.free(fullPathToFolder);
+                try self.scan(fullPathToFolder, markersByExtension);
             }
         }
+    }
+
+    fn scanFile(self: *FileSnippets, fullPathToFile: String, markersByExtension: MarkersByExtension) !void {
+        const content = try readFile(self.allocator, fullPathToFile);
+        defer self.allocator.free(content);
+        const markers = markersByExtension.get(fileExtension(fullPathToFile)) orelse SnippetMarkers.default;
+        const snippets = try parseSnippets(self.scanAllocator.allocator(), content, markers.start, markers.end);
+        if (snippets.count() > 0)
+            try self.put(fullPathToFile, snippets);
     }
 
     fn put(self: *FileSnippets, fileName: String, snippets: Snippet.Map) !void {
