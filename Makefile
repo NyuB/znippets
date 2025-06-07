@@ -1,15 +1,16 @@
 RELEASE_MODE=ReleaseSmall
 INSTALL_PREFIX=$(CURDIR)/install
+ZIG=zig
 
 run:
-	zig build run -- README.md src
+	$(ZIG) build run -- README.md src
 test:
-	zig build test
+	$(ZIG) build test
 install:
-	zig build --prefix $(INSTALL_PREFIX) -Doptimize=$(RELEASE_MODE)
+	$(ZIG) build --prefix $(INSTALL_PREFIX) -Doptimize=$(RELEASE_MODE)
 
 fmt:
-	zig fmt src
-	zig fmt build.zig
-	zig fmt build.zig.zon
+	$(ZIG) fmt src
+	$(ZIG) fmt build.zig
+	$(ZIG) fmt build.zig.zon
 
