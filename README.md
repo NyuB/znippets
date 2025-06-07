@@ -16,11 +16,23 @@ For example, the following snippet was expanded with the above command:
 ```zig
 fn fileExtension(fileName: String) String {
     var it = std.mem.splitBackwardsSequence(u8, fileName, ".");
-    const res = it.next() orelse return "";
-    if (it.next() == null) return ""; // if there is no dot return empty
-    return res;
+    return it.next() orelse "";
 }
 ```
-<sup>[source file](src/main.zig) | </sup>
-<sup><a href='/src/main.zig#L115-L122' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
+<sup>[source file](./src/main.zig) | </sup>
+<sup><a href='/./src/main.zig#L115-L120' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
+<!-- snippet-end -->
+
+### Enforcing valid snippets
+
+Znippets only updates the markdown in place and does not enforce that they were well formatted. One way to do it, e.g. in ci, is to run znippets then check that it did not modify the markdown:
+
+<!-- snippet-start git-diff-exit-code -->
+<a id='snippet-git-diff-exit-code'></a>
+```/Makefile
+	$(INSTALL_PREFIX)/bin/Znippets README.md src
+	git diff --exit-code README.md
+```
+<sup>[source file](./Makefile) | </sup>
+<sup><a href='/./Makefile#L37-L40' title='Snippet source'>source (github)</a> | <a href='#snippet-git-diff-exit-code' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->

@@ -33,5 +33,11 @@ release_changelog.md: CHANGELOG.md etc/release_changelog.py
 validate_semver:
 	$(PY) etc/validate_semver.py $(VERSION)
 
+doc-check: install
+# snippet-start git-diff-exit-code
+	$(INSTALL_PREFIX)/bin/Znippets README.md src
+	git diff --exit-code README.md
+# snippet-end
+
 include etc/help.mk
 include etc/py.mk

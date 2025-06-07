@@ -28,7 +28,7 @@ pub fn main() !void {
     var snippets = FileSnippets.init(allocator);
     defer snippets.deinit();
 
-    var markersByExtension = MarkersByExtension.init(allocator);
+    var markersByExtension = try baseMarkersByExtension(allocator);
     defer markersByExtension.deinit();
     try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
@@ -115,9 +115,7 @@ fn readFile(allocator: std.mem.Allocator, file: String) !String {
 // snippet-start fileExtension
 fn fileExtension(fileName: String) String {
     var it = std.mem.splitBackwardsSequence(u8, fileName, ".");
-    const res = it.next() orelse return "";
-    if (it.next() == null) return ""; // if there is no dot return empty
-    return res;
+    return it.next() orelse "";
 }
 // snippet-end
 
@@ -273,10 +271,21 @@ const SnippetMarkers = struct {
     start: String,
     end: String,
 
+    /// Suitable for c-style single line comment languages (e.g. java, kotlin, zig ...)
     const default = SnippetMarkers{ .start = "// snippet-start", .end = "// snippet-end" };
 };
 
 const MarkersByExtension = std.StringHashMap(SnippetMarkers);
+fn baseMarkersByExtension(allocator: std.mem.Allocator) !MarkersByExtension {
+    var res = MarkersByExtension.init(allocator);
+    try res.put("elm", SnippetMarkers{ .start = "-- snippet-start", .end = "-- snippet-end" });
+    try res.put("Makefile", SnippetMarkers{ .start = "# snippet-start", .end = "# snippet-end" });
+    try res.put("mk", SnippetMarkers{ .start = "# snippet-start", .end = "# snippet-end" });
+    try res.put("ml", SnippetMarkers{ .start = "(* snippet-start", .end = "(* snippet-end *)" });
+    try res.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
+    try res.put("py", SnippetMarkers{ .start = "# snippet-start", .end = "# snippet-end" });
+    return res;
+}
 
 const LanguageByExtension = std.StringHashMap(String);
 fn baseLanguageByExtension(allocator: std.mem.Allocator) !LanguageByExtension {
@@ -286,6 +295,7 @@ fn baseLanguageByExtension(allocator: std.mem.Allocator) !LanguageByExtension {
     try res.put("hpp", "c++");
     try res.put("h", "c++");
     try res.put("kt", "kotlin");
+    try res.put("Makefile", "");
     try res.put("py", "python");
     try res.put("sc", "scala");
     try res.put("sh", "bash");
@@ -605,8 +615,8 @@ test "Expand one snippet" {
         "Expanded",
         "snippet",
         "```",
-        "<sup>[source file](<in-memory-for-tests>) | </sup>",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup>[source file](<in-memory-for-tests>.txt) | </sup>",
+        "<sup><a href='/<in-memory-for-tests>.txt#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -655,8 +665,8 @@ test "Expand many snippets" {
         "Expanded",
         "X",
         "```",
-        "<sup>[source file](<in-memory-for-tests>) | </sup>",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
+        "<sup>[source file](<in-memory-for-tests>.txt) | </sup>",
+        "<sup><a href='/<in-memory-for-tests>.txt#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Interlude",
         "<!-- snippet-start Y -->",
@@ -664,8 +674,8 @@ test "Expand many snippets" {
         "```",
         "Expanded Y",
         "```",
-        "<sup>[source file](<in-memory-for-tests>) | </sup>",
-        "<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
+        "<sup>[source file](<in-memory-for-tests>.txt) | </sup>",
+        "<sup><a href='/<in-memory-for-tests>.txt#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-Y' title='Start of snippet'>anchor</a></sup>",
         "<!-- snippet-end -->",
         "Epilogue",
     }, testWriter.lines.items);
@@ -776,7 +786,10 @@ test "Expand to file" {
         std.fs.cwd().deleteFile("src/test/expanded.md") catch unreachable;
     }
 
-    try expandSnippets(source, mdSnippets, &writer, testSnippets, emptyLanguageByExtension());
+    var languageByExtension = try baseLanguageByExtension(std.testing.allocator);
+    defer languageByExtension.deinit();
+
+    try expandSnippets(source, mdSnippets, &writer, testSnippets, languageByExtension);
     const expanded = try readFile(std.testing.allocator, "src/test/expanded.md");
     defer std.testing.allocator.free(expanded);
 
@@ -787,8 +800,8 @@ test "Expand to file" {
         \\Expanded
         \\snippet
         \\```
-        \\<sup>[source file](<in-memory-for-tests>) | </sup>
-        \\<sup><a href='/<in-memory-for-tests>#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
+        \\<sup>[source file](<in-memory-for-tests>.txt) | </sup>
+        \\<sup><a href='/<in-memory-for-tests>.txt#L1-L1' title='Snippet source'>source (github)</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>
         \\<!-- snippet-end -->
     , expanded);
 }
@@ -805,7 +818,7 @@ const TestSnippets = struct {
     const Result = struct {
         content: String,
         /// TODO inject actual test info
-        info: FullSnippetInfo = .{ .file = "<in-memory-for-tests>", .snippet = .{ .startLine = 0, .endLine = 0 } },
+        info: FullSnippetInfo = .{ .file = "<in-memory-for-tests>.txt", .snippet = .{ .startLine = 0, .endLine = 0 } },
 
         fn lineIterator(self: Result) LineIterator {
             return lines(self.content);

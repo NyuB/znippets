@@ -53,6 +53,7 @@ jobs:
         # Only if manually triggered
         if: github.event_name == 'workflow_dispatch'
         run: |
+          make doc-check
           make release_changelog.md
           make validate_semver VERSION=${{ github.event.inputs.version }}
 
