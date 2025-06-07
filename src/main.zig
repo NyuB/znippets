@@ -117,16 +117,47 @@ fn fileExtension(fileName: String) String {
     return it.next() orelse "";
 }
 
-fn lines(content: String) StringIterator {
-    return std.mem.splitSequence(u8, content, "\n");
+fn lines(content: String) LineIterator {
+    return LineIterator{ .content = content, .delimiters = &[_]String{ "\r\n", "\n" }, .right = content };
 }
+
+const LineIterator = struct {
+    content: String,
+    right: String,
+    delimiters: []const String,
+    leftStart: usize = 0,
+    leftEnd: usize = 0,
+    over: bool = false,
+
+    fn next(self: *LineIterator) ?String {
+        if (self.over) return null;
+        while (true) {
+            for (self.delimiters) |delimiter| {
+                if (std.mem.startsWith(u8, self.right, delimiter)) {
+                    const result = self.content[self.leftStart..self.leftEnd];
+                    self.leftEnd += delimiter.len;
+                    self.leftStart = self.leftEnd;
+                    self.right = self.right[delimiter.len..];
+                    return result;
+                }
+            }
+            if (self.right.len == 0) {
+                self.over = true;
+                return self.content[self.leftStart..];
+            } else {
+                self.right = self.right[1..];
+                self.leftEnd += 1;
+            }
+        }
+    }
+};
 
 const LineRangeIterator = struct {
     start: usize,
     /// Inclusive
     end: usize,
     current: usize,
-    _iterator: StringIterator,
+    _iterator: LineIterator,
 
     fn init(start: usize, end: usize, content: String) LineRangeIterator {
         return LineRangeIterator{ .start = start, .end = end, .current = 0, ._iterator = lines(content) };
@@ -725,7 +756,7 @@ const TestSnippets = struct {
         /// TODO inject actual test info
         info: FullSnippetInfo = .{ .file = "<in-memory-for-tests>", .snippet = .{ .startLine = 0, .endLine = 0 } },
 
-        fn lineIterator(self: Result) StringIterator {
+        fn lineIterator(self: Result) LineIterator {
             return lines(self.content);
         }
 
