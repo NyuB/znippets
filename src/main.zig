@@ -32,12 +32,16 @@ pub fn main() !void {
     defer markersByExtension.deinit();
     try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
+    var languageByExtension = try baseLanguageByExtension(allocator);
+    defer languageByExtension.deinit();
+    try languageByExtension.put("txt", "");
+
     try snippets.scan(args[2], markersByExtension);
 
     var writer = try FileWriter.init(mdFile);
     defer writer.deinit();
 
-    try expandSnippets(mdContent, mdSnippets, &writer, snippets);
+    try expandSnippets(mdContent, mdSnippets, &writer, snippets, languageByExtension);
 }
 
 pub const Snippet = struct {
@@ -109,7 +113,9 @@ fn readFile(allocator: std.mem.Allocator, file: String) !String {
 // snippet-start fileExtension
 fn fileExtension(fileName: String) String {
     var it = std.mem.splitBackwardsSequence(u8, fileName, ".");
-    return it.next() orelse "";
+    const res = it.next() orelse return "";
+    if (it.next() == null) return ""; // if there is no dot return empty
+    return res;
 }
 // snippet-end
 
@@ -170,23 +176,26 @@ const LineRangeIterator = struct {
     }
 };
 
-fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: anytype, snippets: anytype) !void {
+fn expandSnippets(content: String, mdSnippets: MarkdownSnippet.List, writer: anytype, snippets: anytype, languageByExtension: LanguageByExtension) !void {
     var lineIndex: usize = 0;
     var lineIterator = lines(content);
     for (mdSnippets.items) |mdSnippet| {
+        var snippet = try snippets.get(mdSnippet.name);
+        defer snippet.deinit();
+
         while (lineIndex <= mdSnippet.startLine) { // Include snippet start
             try writer.writeLine(lineIterator.next() orelse return);
             lineIndex += 1;
         }
         try writer.writeFormattedLine(MarkdownSnippet.headerAnchorFmt, .{mdSnippet.name});
-        try writer.writeLine(MarkdownSnippet.codeFence);
+        const extension = fileExtension(snippet.info.file);
+        try writer.writeFormattedLine("{s}{s}", .{ MarkdownSnippet.codeFence, languageByExtension.get(extension) orelse extension });
 
         while (lineIndex < mdSnippet.endLine) { // Skip previous content
             lineIndex += 1;
             _ = lineIterator.next();
         }
-        var snippet = try snippets.get(mdSnippet.name);
-        defer snippet.deinit();
+
         var snippetLineIterator = snippet.lineIterator();
         while (snippetLineIterator.next()) |snippetLine| {
             try writer.writeLine(snippetLine);
@@ -265,6 +274,26 @@ const SnippetMarkers = struct {
 };
 
 const MarkersByExtension = std.StringHashMap(SnippetMarkers);
+
+const LanguageByExtension = std.StringHashMap(String);
+fn baseLanguageByExtension(allocator: std.mem.Allocator) !LanguageByExtension {
+    var res = LanguageByExtension.init(allocator);
+    try res.put("cpp", "c++");
+    try res.put("cxx", "c++");
+    try res.put("hpp", "c++");
+    try res.put("h", "c++");
+    try res.put("kt", "kotlin");
+    try res.put("py", "python");
+    try res.put("sc", "scala");
+    try res.put("sh", "bash");
+    try res.put("txt", "");
+    return res;
+}
+
+fn emptyLanguageByExtension() LanguageByExtension {
+    var noAlloc = std.heap.FixedBufferAllocator.init("");
+    return LanguageByExtension.init(noAlloc.allocator());
+}
 
 const FullSnippetInfo = struct {
     file: String,
@@ -522,7 +551,7 @@ test "Expand zero snippet" {
     var testWriter = InMemoryWriter.init(std.testing.allocator);
     defer testWriter.deinit();
 
-    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets, emptyLanguageByExtension());
     try std.testing.expectEqualDeep(&[_]String{
         "Prologue",
         "Epilogue",
@@ -547,7 +576,10 @@ test "Expand one snippet" {
     var testWriter = InMemoryWriter.init(std.testing.allocator);
     defer testWriter.deinit();
 
-    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    var languageByExtension = try baseLanguageByExtension(std.testing.allocator);
+    defer languageByExtension.deinit();
+
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets, languageByExtension);
     try expectLinesEquals(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
@@ -593,7 +625,10 @@ test "Expand many snippets" {
     var testWriter = InMemoryWriter.init(std.testing.allocator);
     defer testWriter.deinit();
 
-    try expandSnippets(source, mdSnippets, &testWriter, testSnippets);
+    var languageByExtension = try baseLanguageByExtension(std.testing.allocator);
+    defer languageByExtension.deinit();
+
+    try expandSnippets(source, mdSnippets, &testWriter, testSnippets, languageByExtension);
     try expectLinesEquals(&[_]String{
         "Prologue",
         "<!-- snippet-start X -->",
@@ -636,7 +671,10 @@ test "Expand from file" {
     var writer = InMemoryWriter.init(std.testing.allocator);
     defer writer.deinit();
 
-    try expandSnippets(source, mdSnippets, &writer, fileSnippets);
+    var languageByExtension = try baseLanguageByExtension(std.testing.allocator);
+    defer languageByExtension.deinit();
+
+    try expandSnippets(source, mdSnippets, &writer, fileSnippets, languageByExtension);
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
@@ -672,7 +710,10 @@ test "Expand from multiple files" {
     var writer = InMemoryWriter.init(std.testing.allocator);
     defer writer.deinit();
 
-    try expandSnippets(source, mdSnippets, &writer, fileSnippets);
+    var languageByExtension = try baseLanguageByExtension(std.testing.allocator);
+    defer languageByExtension.deinit();
+
+    try expandSnippets(source, mdSnippets, &writer, fileSnippets, languageByExtension);
 
     try expectLinesEquals(&[_]String{
         "<!-- snippet-start X -->",
@@ -712,7 +753,7 @@ test "Expand to file" {
         std.fs.cwd().deleteFile("src/test/expanded.md") catch unreachable;
     }
 
-    try expandSnippets(source, mdSnippets, &writer, testSnippets);
+    try expandSnippets(source, mdSnippets, &writer, testSnippets, emptyLanguageByExtension());
     const expanded = try readFile(std.testing.allocator, "src/test/expanded.md");
     defer std.testing.allocator.free(expanded);
 
