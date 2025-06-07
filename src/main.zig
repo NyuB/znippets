@@ -2,12 +2,6 @@ const std = @import("std");
 const String = []const u8;
 const StringIterator = std.mem.SplitIterator(u8, .sequence);
 
-const Errors = error{
-    FileNotFound,
-    InvalidUsage,
-    SnippetNotFound,
-};
-
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
@@ -20,7 +14,7 @@ pub fn main() !void {
     if (args.len < 3) {
         try stdout.print("Usage: {s} <md_file> <snippet_folder>\n", .{args[0]});
         try bw.flush();
-        return Errors.InvalidUsage;
+        std.process.exit(1);
     }
 
     const mdFile = args[1];
@@ -295,6 +289,10 @@ const FileSnippets = struct {
         fn lineIterator(self: Result) LineRangeIterator {
             return LineRangeIterator.init(self.start, self.end, self.content);
         }
+
+        fn empty() Result {
+            return Result{ .content = "", .start = 0, .end = 0, .deallocate = null, .info = FullSnippetInfo{ .file = "", .snippet = Snippet{ .startLine = 0, .endLine = 0 } } };
+        }
     };
 
     const SnippetsByFile = std.StringHashMap(Snippet.Map);
@@ -315,25 +313,15 @@ const FileSnippets = struct {
             if (entry.kind == .file) {
                 const fullPathToFile = try std.fs.path.join(self.scanAllocator.allocator(), &[_]String{ folder, entry.name });
                 const content = try readFile(self.allocator, fullPathToFile);
-                std.debug.print("Scanning file {s}, read {d} bytes\n", .{ entry.name, content.len });
                 defer self.allocator.free(content);
                 const markers = markersByExtension.get(fileExtension(entry.name)) orelse SnippetMarkers.default;
                 const snippets = try parseSnippets(self.scanAllocator.allocator(), content, markers.start, markers.end);
-                std.debug.print("\tFound {d} snippets\n", .{snippets.count()});
-                if (snippets.count() > 0) {
-                    var debugIt = snippets._map.keyIterator();
-                    while (debugIt.next()) |snippetName| {
-                        std.debug.print("\t{s}\n", .{snippetName.*});
-                        std.debug.print("\t{d} bytes long (if there is 1 more character, it may very well be a \\r ...\n", .{snippetName.*.len});
-                    }
+                if (snippets.count() > 0)
                     try self.put(fullPathToFile, snippets);
-                }
             } else if (entry.kind == .directory) {
                 const concatenated = try std.fs.path.join(self.allocator, &[_]String{ folder, entry.name });
                 defer self.allocator.free(concatenated);
                 try self.scan(concatenated, markersByExtension);
-            } else {
-                std.debug.print("Unknown entry kind: {any} for entry {s}\n", .{ entry.kind, entry.name });
             }
         }
     }
@@ -343,10 +331,7 @@ const FileSnippets = struct {
     }
 
     fn get(self: FileSnippets, snippetName: String) !Result {
-        const info = self.getSnippetInfo(snippetName) orelse {
-            std.debug.print("Could not find snippet {s}\n", .{snippetName});
-            return Errors.SnippetNotFound;
-        };
+        const info = self.getSnippetInfo(snippetName) orelse return Result.empty();
         const content = try readFile(self.allocator, info.file);
         return Result.init(self.allocator, content, info);
     }
@@ -378,7 +363,6 @@ fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: St
     var lineIndex: usize = 0;
     var lineIterator = lines(content);
     while (lineIterator.next()) |line| : (lineIndex += 1) {
-        std.debug.print("\tReading line {s}\n", .{line});
         if (std.mem.startsWith(u8, line, snippetStart)) {
             var name: String = "";
             if (line.len > snippetStart.len + 1) {
@@ -645,7 +629,7 @@ test "Expand from file" {
     defer markersByExtension.deinit();
     try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
-    try fileSnippets.scan(adaptOsSeparator("src{[sep]c}test"), markersByExtension);
+    try fileSnippets.scan("src/test", markersByExtension);
 
     var writer = InMemoryWriter.init(std.testing.allocator);
     defer writer.deinit();
@@ -659,7 +643,7 @@ test "Expand from file" {
         "Expanded #1",
         "Expanded #2",
         "```",
-        adaptOsSeparator("<sup><a href='/src{[sep]c}test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
+        adaptOsSeparator("<sup><a href='/src/test{[sep]c}snippet.txt#L1-L4' title='Snippet source file'>snippet source</a> | <a href='#snippet-X' title='Start of snippet'>anchor</a></sup>"),
         "<!-- snippet-end -->",
     }, writer.lines.items);
 }
