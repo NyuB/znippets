@@ -2,6 +2,7 @@
 
 ## Features & changes
 
+- Also include a direct markdown link to the snippet source file to allow navigation from local sources and not only from github/gitlab
 - Always use posix path separators, windows or not
 
 # 0.0.1
