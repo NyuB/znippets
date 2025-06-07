@@ -393,7 +393,8 @@ fn parseSnippets(allocator: std.mem.Allocator, content: String, snippetStart: St
     } = null;
     var lineIndex: usize = 0;
     var lineIterator = lines(content);
-    while (lineIterator.next()) |line| : (lineIndex += 1) {
+    while (lineIterator.next()) |fullLine| : (lineIndex += 1) {
+        const line = std.mem.trimLeft(u8, fullLine, "\t ");
         if (std.mem.startsWith(u8, line, snippetStart)) {
             var name: String = "";
             if (line.len > snippetStart.len + 1) {
@@ -466,6 +467,19 @@ test "Parse many snippets" {
     try expectSnippetsEquals(&[_]SnippetAssertItem{
         .{ .name = "X", .snippet = Snippet{ .startLine = 0, .endLine = 2 } },
         .{ .name = "Y", .snippet = Snippet{ .startLine = 4, .endLine = 6 } },
+    }, result);
+}
+
+test "Parse indented snippets" {
+    const source =
+        \\    // snippet-start X
+        \\    x = 42
+        \\ // snippet-end
+    ;
+    var result = try parseSnippets(std.testing.allocator, source, "// snippet-start", "// snippet-end");
+    defer result.deinit();
+    try expectSnippetsEquals(&[_]SnippetAssertItem{
+        .{ .name = "X", .snippet = Snippet{ .startLine = 0, .endLine = 2 } },
     }, result);
 }
 
