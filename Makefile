@@ -33,6 +33,7 @@ release_changelog.md: CHANGELOG.md etc/release_changelog.py
 validate_semver:
 	$(PY) etc/validate_semver.py $(VERSION)
 
+# Validate that the documentation snippets are synced
 doc-check: install
 # snippet-start git-diff-exit-code
 	$(INSTALL_PREFIX)/bin/Znippets README.md src

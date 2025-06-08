@@ -50,5 +50,5 @@ Znippets only updates the markdown in place and does not enforce that they were 
 	git diff --exit-code README.md
 ```
 <sup>[source file](Makefile) | </sup>
-<sup><a href='/Makefile#L37-L40' title='Snippet source'>source (github)</a> | <a href='#snippet-git-diff-exit-code' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/Makefile#L38-L41' title='Snippet source'>source (github)</a> | <a href='#snippet-git-diff-exit-code' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->
