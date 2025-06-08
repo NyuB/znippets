@@ -19,8 +19,8 @@ fn fileExtension(fileName: String) String {
     return it.next() orelse "";
 }
 ```
-<sup>[source file](./src/main.zig) | </sup>
-<sup><a href='/./src/main.zig#L115-L120' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
+<sup>[source file](src/main.zig) | </sup>
+<sup><a href='/src/main.zig#L128-L133' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->
 
 ### Enforcing valid snippets
