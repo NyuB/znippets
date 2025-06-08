@@ -6,7 +6,7 @@ ZIG=zig
 
 # Run Znippets on its own codebase
 run:
-	$(ZIG) build run -- README.md src
+	$(ZIG) build run -- README.md
 
 # Run unit tests
 test:

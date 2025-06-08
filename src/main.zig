@@ -11,11 +11,15 @@ pub fn main() !void {
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
-    if (args.len < 3) {
-        try stdout.print("Usage: {s} <md_file> <snippet_folder>\n", .{args[0]});
+    if (args.len < 2) {
+        try stdout.print("Usage: {s} [<md_file>...]", .{args[0]});
         try bw.flush();
         std.process.exit(1);
     }
+
+    const configString = try readFile(allocator, "znippets.json");
+    const config = try std.json.parseFromSlice(Config, allocator, configString, std.json.ParseOptions{});
+    defer config.deinit();
 
     const mdFile = args[1];
 
@@ -34,13 +38,24 @@ pub fn main() !void {
     var languageByExtension = try baseLanguageByExtension(allocator);
     defer languageByExtension.deinit();
 
-    try snippets.scan(args[2], markersByExtension);
+    for (config.value.snippetFiles) |snippetFile| {
+        try snippets.scanFile(snippetFile, markersByExtension);
+    }
+
+    for (config.value.snippetFolders) |snippetFolder| {
+        try snippets.scan(snippetFolder, markersByExtension);
+    }
 
     var writer = try FileWriter.init(mdFile);
     defer writer.deinit();
 
     try expandSnippets(mdContent, mdSnippets, &writer, snippets, languageByExtension);
 }
+
+const Config = struct {
+    snippetFiles: []const String,
+    snippetFolders: []const String,
+};
 
 pub const Snippet = struct {
     /// 0 indexed

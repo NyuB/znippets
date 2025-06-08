@@ -4,10 +4,26 @@
 
 ## Usage
 
-```shell
-$> Znippets README.md src
+Define where to look for snippets in a [znippets.json](znippets.json) file (folders are scanned recursively)
+
 ```
-Run Znippets on README.md, looking for snippets in the src/ folder (recursively)
+{
+    "snippetFiles": [
+        "Makefile"
+    ],
+    "snippetFolders": [
+        "src"
+    ]
+}
+```
+
+Then invoke Znippets, passing the markdowns to format as arguments
+
+```shell
+$> Znippets README.md
+```
+
+It will expand all snippet sections in the markdown with the actual content from your sources.
 
 For example, the following snippet was expanded with the above command:
 
@@ -29,10 +45,10 @@ Znippets only updates the markdown in place and does not enforce that they were 
 
 <!-- snippet-start git-diff-exit-code -->
 <a id='snippet-git-diff-exit-code'></a>
-```/Makefile
+```
 	$(INSTALL_PREFIX)/bin/Znippets README.md src
 	git diff --exit-code README.md
 ```
-<sup>[source file](./Makefile) | </sup>
-<sup><a href='/./Makefile#L37-L40' title='Snippet source'>source (github)</a> | <a href='#snippet-git-diff-exit-code' title='Start of snippet'>anchor</a></sup>
+<sup>[source file](Makefile) | </sup>
+<sup><a href='/Makefile#L37-L40' title='Snippet source'>source (github)</a> | <a href='#snippet-git-diff-exit-code' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->
