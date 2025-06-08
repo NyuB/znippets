@@ -30,11 +30,9 @@ pub fn main() !void {
 
     var markersByExtension = try baseMarkersByExtension(allocator);
     defer markersByExtension.deinit();
-    try markersByExtension.put("txt", SnippetMarkers{ .start = "Start:", .end = "End:" });
 
     var languageByExtension = try baseLanguageByExtension(allocator);
     defer languageByExtension.deinit();
-    try languageByExtension.put("txt", "");
 
     try snippets.scan(args[2], markersByExtension);
 
