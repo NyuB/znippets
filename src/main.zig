@@ -303,16 +303,22 @@ fn baseMarkersByExtension(allocator: std.mem.Allocator) !MarkersByExtension {
 const LanguageByExtension = std.StringHashMap(String);
 fn baseLanguageByExtension(allocator: std.mem.Allocator) !LanguageByExtension {
     var res = LanguageByExtension.init(allocator);
+    try res.put("c", "c");
     try res.put("cpp", "c++");
     try res.put("cxx", "c++");
     try res.put("hpp", "c++");
     try res.put("h", "c++");
+    try res.put("java", "java");
+    try res.put("json", "json");
     try res.put("kt", "kotlin");
     try res.put("Makefile", "");
     try res.put("py", "python");
     try res.put("sc", "scala");
+    try res.put("scala", "scala");
     try res.put("sh", "bash");
     try res.put("txt", "");
+    try res.put("ui", "xml");
+    try res.put("xml", "xml");
     return res;
 }
 
