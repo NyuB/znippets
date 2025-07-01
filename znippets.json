@@ -4,5 +4,9 @@
     ],
     "snippetFolders": [
         "src"
-    ]
+    ],
+    "languages": {
+        "Makefile": "make"
+    },
+    "markers": {}
 }

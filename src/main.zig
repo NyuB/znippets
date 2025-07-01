@@ -38,6 +38,8 @@ pub fn main() !void {
     var languageByExtension = try baseLanguageByExtension(allocator);
     defer languageByExtension.deinit();
 
+    try config.value.mergeInto(&markersByExtension, &languageByExtension);
+
     for (config.value.snippetFiles) |snippetFile| {
         try snippets.scanFile(snippetFile, markersByExtension);
     }
@@ -55,6 +57,19 @@ pub fn main() !void {
 const Config = struct {
     snippetFiles: []const String,
     snippetFolders: []const String,
+    markers: std.json.ArrayHashMap(SnippetMarkers),
+    languages: std.json.ArrayHashMap(String),
+
+    fn mergeInto(self: Config, markers: *MarkersByExtension, languages: *LanguageByExtension) !void {
+        var markersIterator = self.markers.map.iterator();
+        while (markersIterator.next()) |entry| {
+            try markers.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+        var languagesIterator = self.languages.map.iterator();
+        while (languagesIterator.next()) |entry| {
+            try languages.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
 };
 
 pub const Snippet = struct {

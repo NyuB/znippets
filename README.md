@@ -36,7 +36,7 @@ fn fileExtension(fileName: String) String {
 }
 ```
 <sup>[source file](src/main.zig) | </sup>
-<sup><a href='/src/main.zig#L128-L133' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/main.zig#L143-L148' title='Snippet source'>source (github)</a> | <a href='#snippet-fileExtension' title='Start of snippet'>anchor</a></sup>
 <!-- snippet-end -->
 
 ### Enforcing valid snippets
@@ -45,7 +45,7 @@ Znippets only updates the markdown in place and does not enforce that they were 
 
 <!-- snippet-start git-diff-exit-code -->
 <a id='snippet-git-diff-exit-code'></a>
-```
+```make
 	$(INSTALL_PREFIX)/bin/Znippets README.md src
 	git diff --exit-code README.md
 ```
